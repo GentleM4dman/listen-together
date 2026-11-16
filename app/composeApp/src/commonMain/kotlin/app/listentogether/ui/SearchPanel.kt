@@ -1,6 +1,7 @@
 package app.listentogether.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -8,13 +9,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,22 +32,28 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +65,7 @@ import app.listentogether.AppController
 import app.listentogether.model.Podcast
 import app.listentogether.model.TrackRef
 import app.listentogether.playlist.PlaylistLinks
+import app.listentogether.playlist.SavedPlaylist
 
 private const val PodcastTab = "podcast"
 
@@ -78,8 +89,32 @@ internal fun videoLinkSource(text: String): String? = when {
     else -> null
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchPanel(controller: AppController, ui: UiActions, onClose: () -> Unit, videoOnly: Boolean = false) {
+fun SearchSheet(controller: AppController, ui: UiActions, visible: Boolean, onDismiss: () -> Unit) {
+    if (!visible) return
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Palette.Background,
+        scrimColor = Color.Black.copy(alpha = 0.55f),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = {
+            Box(
+                Modifier.padding(vertical = 10.dp).size(width = 36.dp, height = 4.dp)
+                    .clip(CircleShape).background(Palette.Outline),
+            )
+        },
+    ) {
+        Box(Modifier.fillMaxWidth().fillMaxHeight(0.88f)) {
+            SearchPanel(controller, ui, onClose = onDismiss, inSheet = true)
+        }
+    }
+}
+
+@Composable
+fun SearchPanel(controller: AppController, ui: UiActions, onClose: () -> Unit, videoOnly: Boolean = false, inSheet: Boolean = false) {
     var query by remember { mutableStateOf("") }
     // 放映厅只能点视频：标签换成 B站 和 YouTube。
     val sources = if (videoOnly) VideoTabs else Sources
@@ -94,6 +129,8 @@ fun SearchPanel(controller: AppController, ui: UiActions, onClose: () -> Unit, v
     var searchNow by remember { mutableStateOf(false) }
     var playlistMode by remember { mutableStateOf(false) }
     var playlistDraft by remember { mutableStateOf("") }
+    // 本机收藏的歌单：没搜索、输入框空着的时候直接展示在这里。
+    val savedPlaylists by controller.playlists.saved.collectAsState()
 
     // Keep the clipboard observer mounted across child pages; returning must not replay the same event.
     val linkSource = { text: String -> videoLinkSource(text)?.takeIf { videoOnly || it == "bilibili" } }
@@ -117,7 +154,7 @@ fun SearchPanel(controller: AppController, ui: UiActions, onClose: () -> Unit, v
 
     if (playlistMode && !videoOnly) {
         PlaylistPanel(controller, ui, playlistDraft, added, onAdded = { added = added + it.key },
-            onBack = { playlistMode = false; playlistDraft = "" }, onClose = onClose)
+            onBack = { playlistMode = false; playlistDraft = "" }, onClose = onClose, inSheet = inSheet)
         return
     }
 
@@ -132,7 +169,7 @@ fun SearchPanel(controller: AppController, ui: UiActions, onClose: () -> Unit, v
     }
 
     openPodcast?.let { p ->
-        PodcastDetail(controller, ui, p, added, onAdd = addTrack, onBack = { openPodcast = null })
+        PodcastDetail(controller, ui, p, added, onAdd = addTrack, onBack = { openPodcast = null }, inSheet = inSheet)
         return
     }
 
@@ -165,10 +202,22 @@ fun SearchPanel(controller: AppController, ui: UiActions, onClose: () -> Unit, v
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Palette.Background).windowInsetsPadding(WindowInsets.systemBars)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            RoundIcon(onClick = onClose) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回", tint = Palette.Text) }
-            Text(if (videoOnly) "点视频" else "点歌", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 12.dp))
+    val containerMod = if (inSheet) {
+        Modifier.fillMaxSize().background(Palette.Background)
+    } else {
+        Modifier.fillMaxSize().background(Palette.Background).windowInsetsPadding(WindowInsets.systemBars)
+    }
+    Column(containerMod) {
+        if (inSheet) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (videoOnly) "点视频" else "点歌", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                RoundIcon(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "关闭", tint = Palette.Muted) }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                RoundIcon(onClick = onClose) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回", tint = Palette.Text) }
+                Text(if (videoOnly) "点视频" else "点歌", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 12.dp))
+            }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
@@ -196,6 +245,20 @@ fun SearchPanel(controller: AppController, ui: UiActions, onClose: () -> Unit, v
                     )
                 },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = Palette.Muted) },
+                trailingIcon = {
+                    // 清空搜索即回到"我的歌单"待机视图。
+                    if (query.isNotEmpty()) {
+                        Box(
+                            Modifier.size(32.dp).clip(CircleShape).clickable {
+                                query = ""
+                                searched = false
+                                results = emptyList()
+                                podcasts = emptyList()
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(Icons.Rounded.Close, contentDescription = "清空", tint = Palette.Muted, modifier = Modifier.size(16.dp)) }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -206,7 +269,6 @@ fun SearchPanel(controller: AppController, ui: UiActions, onClose: () -> Unit, v
                 ),
             )
         }
-        if (!videoOnly) PlaylistTabs(selected = false, onSearch = {}, onPlaylists = { playlistMode = true })
         Row(
             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -254,8 +316,44 @@ fun SearchPanel(controller: AppController, ui: UiActions, onClose: () -> Unit, v
                 },
             )
         }
+        // 待机视图：没搜过且输入框为空时，这里就是"我的歌单"。
+        val idlePlaylists = !videoOnly && query.isBlank() && !searched
+        if (idlePlaylists) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("我的歌单", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                if (savedPlaylists.isNotEmpty()) {
+                    Text(
+                        " · ${savedPlaylists.size}", color = Palette.Muted,
+                        style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Row(
+                    Modifier.clip(CircleShape).background(Palette.SurfaceHigh)
+                        .clickable { playlistDraft = ""; playlistMode = true }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Link, contentDescription = null, tint = Palette.Text, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("导入歌单", color = Palette.Text, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
-            if (isPodcastTab) {
+            if (idlePlaylists) {
+                if (savedPlaylists.isEmpty()) {
+                    item(key = "idle:empty") { EmptyHint("粘贴网易云 / QQ 歌单链接，或直接搜歌") }
+                }
+                items(savedPlaylists, key = { it.key }) { playlist -> SavedPlaylistRow(playlist, onOpen = {
+                    playlistDraft = playlist.url
+                    playlistMode = true
+                }, onRemove = { controller.playlists.remove(playlist.key) })
+                }
+            } else if (isPodcastTab) {
                 items(podcasts, key = { "pod:" + it.id }) { p -> PodcastRow(p) { openPodcast = p } }
             } else {
                 items(results, key = { it.key }) { track -> TrackRow(track, track.key in added) { addTrack(track) } }
@@ -272,6 +370,7 @@ private fun PodcastDetail(
     added: Set<String>,
     onAdd: (TrackRef) -> Unit,
     onBack: () -> Unit,
+    inSheet: Boolean = false,
 ) {
     var tracks by remember(podcast.id) { mutableStateOf<List<TrackRef>>(emptyList()) }
     var nextOffset by remember(podcast.id) { mutableStateOf(0) }
@@ -301,7 +400,12 @@ private fun PodcastDetail(
     }
     LaunchedEffect(podcast.id) { loadMore() }
 
-    Column(Modifier.fillMaxSize().background(Palette.Background).windowInsetsPadding(WindowInsets.systemBars)) {
+    val detailMod = if (inSheet) {
+        Modifier.fillMaxSize().background(Palette.Background)
+    } else {
+        Modifier.fillMaxSize().background(Palette.Background).windowInsetsPadding(WindowInsets.systemBars)
+    }
+    Column(detailMod) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             RoundIcon(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回", tint = Palette.Text) }
             Text(
@@ -347,7 +451,10 @@ private fun PodcastDetail(
 @Composable
 internal fun TrackRow(track: TrackRef, done: Boolean, selection: Boolean? = null, enabled: Boolean = true, onAdd: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(14.dp)).padding(vertical = 6.dp),
+        Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(14.dp))
+            // 多选模式下整行可点，勾哪都行。
+            .clickable(enabled = selection != null && enabled, onClick = onAdd)
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Cover(track, 52.dp, corner = 10.dp)
@@ -359,8 +466,18 @@ internal fun TrackRow(track: TrackRef, done: Boolean, selection: Boolean? = null
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
             )
         }
-        if (selection != null) Checkbox(checked = selection, onCheckedChange = { onAdd() }, enabled = enabled)
-        else Box(
+        if (selection != null) {
+            // 圆形选择指示：选中 Accent 实心 + 白色勾，未选中细描边。
+            Box(
+                Modifier.padding(end = 4.dp).size(24.dp).alpha(if (enabled) 1f else 0.4f)
+                    .clip(CircleShape)
+                    .background(if (selection) Palette.Accent else Color.Transparent)
+                    .border(1.5.dp, if (selection) Palette.Accent else Palette.Muted, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selection) Icon(Icons.Rounded.Check, contentDescription = "已选", tint = Color.White, modifier = Modifier.size(14.dp))
+            }
+        } else Box(
             Modifier.size(38.dp).clip(CircleShape)
                 .background(if (done) Palette.SurfaceHigh else Palette.AccentSoft)
                 .clickable(enabled = !done && enabled, onClick = onAdd),
@@ -391,6 +508,30 @@ private fun PodcastRow(p: Podcast, onClick: () -> Unit) {
             )
         }
         Icon(Icons.Rounded.ChevronRight, contentDescription = "查看节目", tint = Palette.Muted)
+    }
+}
+
+/** "我的歌单"里的一条收藏：点开进入歌单详情，右侧小圆按钮取消收藏。 */
+@Composable
+private fun SavedPlaylistRow(playlist: SavedPlaylist, onOpen: () -> Unit, onRemove: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onOpen).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Cover(playlist.coverTrack(), 52.dp, corner = 10.dp)
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(playlist.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${playlist.sourceName} · ${playlist.total} 首",
+                style = MaterialTheme.typography.bodySmall, color = Palette.Muted,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Box(
+            Modifier.size(34.dp).clip(CircleShape).background(Palette.SurfaceHigh).clickable(onClick = onRemove),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Rounded.Close, contentDescription = "取消收藏", tint = Palette.Muted, modifier = Modifier.size(16.dp)) }
     }
 }
 

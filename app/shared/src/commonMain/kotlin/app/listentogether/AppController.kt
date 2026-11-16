@@ -17,6 +17,7 @@ import app.listentogether.net.SocketEvent
 import app.listentogether.net.createHttpClient
 import app.listentogether.player.AudioPlayer
 import app.listentogether.playlist.PlaylistLibrary
+import app.listentogether.playlist.PlaylistPreview
 import app.listentogether.player.PlaybackCoordinator
 import app.listentogether.player.SyncDebug
 import app.listentogether.room.RoomStore
@@ -378,7 +379,17 @@ class AppController(
 
     suspend fun search(query: String, source: String): List<TrackRef> = requireApi().search(query, source)
 
-    suspend fun playlist(link: String) = requireApi().playlist(link)
+    /**
+     * 解析歌单。默认优先用本机缓存（同一链接直接返回）；forceRefresh 时一定走服务器，
+     * 并把最新结果写回缓存。
+     */
+    suspend fun playlist(link: String, forceRefresh: Boolean = false): PlaylistPreview {
+        val trimmed = link.trim()
+        if (!forceRefresh) playlists.cachedByUrl(trimmed)?.let { return it }
+        val result = requireApi().playlist(link)
+        playlists.cache(result)
+        return result
+    }
 
     suspend fun podcasts(query: String): List<Podcast> = requireApi().podcasts(query)
 

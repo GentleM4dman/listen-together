@@ -127,10 +127,6 @@ fun RoomScreen(controller: AppController, room: Snapshot, ui: UiActions, onMinim
 
     // 返回只是收起房间，音乐照常放；真正退出走右上角菜单、迷你栏的 × 或通知栏。
     PlatformBackHandler(enabled = !searching && !showActivity && !showListeners && !showSyncMode, onBack = onMinimize)
-    if (searching) {
-        SearchPanel(controller, ui, onClose = { searching = false })
-        return
-    }
     if (showActivity) {
         ActivityScreen(controller, room, onClose = { showActivity = false })
         return
@@ -166,6 +162,7 @@ fun RoomScreen(controller: AppController, room: Snapshot, ui: UiActions, onMinim
                             )
                         }
                     }
+                    AudioOutputButton(controller, Modifier.padding(end = 8.dp))
                     RoundIcon(onClick = { showActivity = true }) {
                         Icon(Icons.Rounded.History, contentDescription = "房间记录", tint = Palette.Text)
                     }
@@ -206,9 +203,6 @@ fun RoomScreen(controller: AppController, room: Snapshot, ui: UiActions, onMinim
                         }
                     }
                 }
-            }
-            item {
-                AudioOutputButton(controller)
             }
             item {
                 AnimatedVisibility(showDebug, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -264,6 +258,7 @@ fun RoomScreen(controller: AppController, room: Snapshot, ui: UiActions, onMinim
         LikeBurstLayer(likeFlow, anchor = { likeAnchor[0] })
         ListenersSheet(controller, room, me, visible = showListeners, onDismiss = { showListeners = false })
         SyncModeSheet(controller, visible = showSyncMode, onDismiss = { showSyncMode = false })
+        SearchSheet(controller, ui, visible = searching, onDismiss = { searching = false })
     }
 }
 
