@@ -418,6 +418,12 @@ func (a *API) handleStream(c *gin.Context) {
 
 func (a *API) handleLyrics(c *gin.Context) {
 	song := a.song(c.Param("source"), c.Param("id"))
+	if song.Source == "netease" {
+		if lrc := fetchNeteaseYRC(song.ID); lrc != "" {
+			c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(lrc))
+			return
+		}
+	}
 	fn := core.GetLyricFunc(song.Source)
 	if fn == nil {
 		c.String(404, "")
