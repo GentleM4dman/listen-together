@@ -19,3 +19,7 @@ Kotlin Multiplatform 客户端，配合 [服务端](../server/)使用。
 ```
 
 需要 JDK 21 和 Android SDK 36（可用 Android Studio 配置）。iOS 目标要装 Xcode 后才能编译，播放器（AVPlayer）和 iOS 入口还没写。
+
+## 第三方代码
+
+逐字歌词动画移植自 [aura-music](https://github.com/dingyi222666/aura-music)，见[版权及 MIT 许可声明](third_party/licenses/aura-music-MIT.txt)。
